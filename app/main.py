@@ -1,14 +1,28 @@
 from __future__ import annotations
 
+import os
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, status
 
+from .database import Base, engine
 from .schemas import Book, BookCreate, BookUpdate
 from .storage import create_book, delete_book, get_all_books, get_book_by_id, seed_books, update_book
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    Base.metadata.create_all(bind=engine)
+    if os.getenv("TESTING", "false").lower() != "true":
+        seed_books()
+    yield
+
 
 app = FastAPI(
     title="Library API",
     description="REST API для управления книгами в библиотеке",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 
@@ -41,8 +55,6 @@ def put_book(book_id: int, book_data: BookUpdate) -> Book:
 def remove_book(book_id: int) -> None:
     delete_book(book_id)
 
-
-seed_books()
 
 if __name__ == "__main__":
     import uvicorn
