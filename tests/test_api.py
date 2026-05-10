@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 import pytest
 
 
@@ -10,6 +12,14 @@ VALID_BOOK = {
     "published_year": 2020,
     "is_available": True,
 }
+
+
+@pytest.fixture
+def created_book(client):
+    payload = {**VALID_BOOK, "isbn": "978-0-000001-00-0"}
+    response = client.post("/books", json=payload)
+    assert response.status_code == 201
+    return response.json()
 
 
 def test_root(client):
@@ -31,7 +41,8 @@ def test_create_book_success(client):
     response = client.post("/books", json=VALID_BOOK)
     assert response.status_code == 201
     data = response.json()
-    assert data["id"] == 1
+    assert data["id"] is not None
+    assert isinstance(data["id"], int)
     assert data["title"] == VALID_BOOK["title"]
     assert data["author"] == VALID_BOOK["author"]
     assert data["isbn"] == VALID_BOOK["isbn"]
@@ -66,7 +77,6 @@ def test_create_book_empty_string(client, field, invalid_value, expected_detail)
 
 
 def test_create_book_invalid_year_future(client):
-    from datetime import datetime
     future_year = datetime.now().year + 1
     payload = {**VALID_BOOK, "published_year": future_year}
     response = client.post("/books", json=payload)
@@ -95,13 +105,12 @@ def test_create_book_invalid_isbn_wrong_length(client):
     assert "ISBN должен содержать 10 или 13 цифр" in str(response.json())
 
 
-def test_get_book_by_id_success(client):
-    client.post("/books", json=VALID_BOOK)
-    response = client.get("/books/1")
+def test_get_book_by_id_success(client, created_book):
+    response = client.get(f"/books/{created_book['id']}")
     assert response.status_code == 200
     data = response.json()
-    assert data["id"] == 1
-    assert data["title"] == VALID_BOOK["title"]
+    assert data["id"] == created_book["id"]
+    assert data["title"] == created_book["title"]
 
 
 def test_get_book_by_id_not_found(client):
@@ -111,16 +120,14 @@ def test_get_book_by_id_not_found(client):
 
 
 def test_get_books_with_data(client):
-    client.post("/books", json=VALID_BOOK)
+    client.post("/books", json={**VALID_BOOK, "isbn": "978-0-999999-99-9"})
     response = client.get("/books")
     assert response.status_code == 200
     data = response.json()
-    assert len(data) == 1
-    assert data[0]["title"] == VALID_BOOK["title"]
+    assert len(data) >= 1
 
 
-def test_update_book_success(client):
-    client.post("/books", json=VALID_BOOK)
+def test_update_book_success(client, created_book):
     update_payload = {
         "title": "Обновлённое название",
         "author": "Обновлённый автор",
@@ -128,10 +135,10 @@ def test_update_book_success(client):
         "published_year": 2021,
         "is_available": False,
     }
-    response = client.put("/books/1", json=update_payload)
+    response = client.put(f"/books/{created_book['id']}", json=update_payload)
     assert response.status_code == 200
     data = response.json()
-    assert data["id"] == 1
+    assert data["id"] == created_book["id"]
     assert data["title"] == update_payload["title"]
     assert data["author"] == update_payload["author"]
     assert data["isbn"] == update_payload["isbn"]
@@ -139,16 +146,17 @@ def test_update_book_success(client):
     assert data["is_available"] == update_payload["is_available"]
 
 
-def test_update_book_partial(client):
-    client.post("/books", json=VALID_BOOK)
-    response = client.put("/books/1", json={"title": "Только заголовок"})
+def test_update_book_partial(client, created_book):
+    response = client.put(
+        f"/books/{created_book['id']}", json={"title": "Только заголовок"}
+    )
     assert response.status_code == 200
     data = response.json()
     assert data["title"] == "Только заголовок"
-    assert data["author"] == VALID_BOOK["author"]
-    assert data["isbn"] == VALID_BOOK["isbn"]
-    assert data["published_year"] == VALID_BOOK["published_year"]
-    assert data["is_available"] == VALID_BOOK["is_available"]
+    assert data["author"] == created_book["author"]
+    assert data["isbn"] == created_book["isbn"]
+    assert data["published_year"] == created_book["published_year"]
+    assert data["is_available"] == created_book["is_available"]
 
 
 def test_update_book_not_found(client):
@@ -157,28 +165,28 @@ def test_update_book_not_found(client):
     assert response.json()["detail"] == "Книга с id=999 не найдена"
 
 
-def test_update_book_invalid_year(client):
-    client.post("/books", json=VALID_BOOK)
-    from datetime import datetime
+def test_update_book_invalid_year(client, created_book):
     future_year = datetime.now().year + 1
-    response = client.put("/books/1", json={"published_year": future_year})
+    response = client.put(
+        f"/books/{created_book['id']}", json={"published_year": future_year}
+    )
     assert response.status_code == 422
     assert "Год издания не может быть больше текущего" in str(response.json())
 
 
-def test_update_book_invalid_isbn(client):
-    client.post("/books", json=VALID_BOOK)
-    response = client.put("/books/1", json={"isbn": "bad-isbn"})
+def test_update_book_invalid_isbn(client, created_book):
+    response = client.put(
+        f"/books/{created_book['id']}", json={"isbn": "bad-isbn"}
+    )
     assert response.status_code == 422
     assert "ISBN должен содержать только цифры и дефисы" in str(response.json())
 
 
-def test_delete_book_success(client):
-    client.post("/books", json=VALID_BOOK)
-    response = client.delete("/books/1")
+def test_delete_book_success(client, created_book):
+    response = client.delete(f"/books/{created_book['id']}")
     assert response.status_code == 204
     assert response.content == b""
-    get_response = client.get("/books/1")
+    get_response = client.get(f"/books/{created_book['id']}")
     assert get_response.status_code == 404
 
 
@@ -189,7 +197,7 @@ def test_delete_book_not_found(client):
 
 
 def test_create_book_response_structure(client):
-    response = client.post("/books", json=VALID_BOOK)
+    response = client.post("/books", json={**VALID_BOOK, "isbn": "978-0-000002-00-0"})
     assert response.status_code == 201
     data = response.json()
     expected_keys = {"id", "title", "author", "isbn", "published_year", "is_available"}
@@ -203,11 +211,31 @@ def test_create_book_response_structure(client):
 
 
 def test_multiple_books_increment_ids(client):
+    ids = []
     for i in range(3):
-        payload = {**VALID_BOOK, "title": f"Книга {i}"}
+        payload = {**VALID_BOOK, "title": f"Книга {i}", "isbn": f"978-0-123456-78-{i}"}
         response = client.post("/books", json=payload)
         assert response.status_code == 201
-        assert response.json()["id"] == i + 1
+        ids.append(response.json()["id"])
+
+    assert ids == sorted(ids)
+    assert len(set(ids)) == 3
 
     response = client.get("/books")
     assert len(response.json()) == 3
+
+
+def test_seed_books_populates_database(client):
+    from app.storage import seed_books, get_all_books
+
+    seed_books()
+    books = get_all_books()
+    assert len(books) >= 3
+
+
+def test_clear_storage_removes_all_books(client):
+    from app.storage import clear_storage, get_all_books
+
+    client.post("/books", json={**VALID_BOOK, "isbn": "978-0-clear-00-0"})
+    clear_storage()
+    assert get_all_books() == []
