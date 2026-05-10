@@ -14,15 +14,21 @@
 | 1 | Генерация CRUD-приложения |
 | 2 | Генерация тестов |
 | 3 | Рефакторинг «плохого» кода |
+| 4 | Генерация Docker-конфигурации |
+
 ---
 
 ## Технологии
 
-- **Язык:** Python 3.13+
+- **Язык:** Python 3.11+
 - **Фреймворк:** FastAPI
 - **Валидация:** Pydantic v2
+- **База данных:** PostgreSQL 16
+- **ORM:** SQLAlchemy 2.0
+- **Миграции:** Alembic
 - **Сервер:** Uvicorn
 - **Тестирование:** pytest, httpx
+- **Контейнеризация:** Docker, Docker Compose
 
 ---
 
@@ -31,18 +37,30 @@
 ```
 app/
 ├── __init__.py      # Инициализация пакета
+├── database.py      # Подключение к БД (SQLAlchemy)
 ├── main.py          # Точка входа FastAPI-приложения
+├── models.py        # ORM-модели
+├── penalty-pre-refactor.py       # Логика штрафов до рефакторинга
 ├── penalty.py       # Логика штрафов
 ├── schemas.py       # Pydantic-модели (валидация данных)
-└── storage.py       # In-memory хранилище книг
+└── storage.py       # Слой доступа к данным (CRUD)
+
+alembic/
+├── versions/        # Миграции БД
+├── env.py           # Конфигурация Alembic
+└── script.py.mako   # Шаблон миграций
 
 tests/
 ├── __init__.py
 ├── conftest.py      # Фикстуры pytest
-├── test_penalty.py  # Тесты рассчета штрафов
-└── test_api.py      # Интеграционные тесты API
+├── test_api.py      # Интеграционные тесты API
+└── test_penalty.py  # Unit-тесты расчёта штрафов
 
-requirements.txt     # Зависимости проекта
+Dockerfile             # Образ приложения
+.dockerignore          # Исключения для сборки
+docker-compose.yml     # Оркестрация сервисов
+entrypoint.sh          # Скрипт запуска (ожидание БД + миграции)
+requirements.txt       # Зависимости проекта
 ```
 
 ---
@@ -51,36 +69,52 @@ requirements.txt     # Зависимости проекта
 
 ### Предварительные требования
 
-- [Python](https://www.python.org/downloads/) 3.13+ установлен
-- [pip](https://pip.pypa.io/en/stable/installation/) доступен
+- [Python](https://www.python.org/downloads/) 3.11+ установлен (для локальной разработки)
+- [Docker](https://docs.docker.com/get-docker/) и Docker Compose установлены (для контейнерного запуска)
+
+---
+
+### Запуск через Docker Compose (рекомендуется)
+
+Поднимает два сервиса: FastAPI-приложение и PostgreSQL.
+
+```bash
+docker-compose up --build
+```
+
+Приложение будет доступно по адресу: http://localhost:8000  
+Интерактивная документация (Swagger UI): http://localhost:8000/docs
+
+#### Переменные окружения
+
+| Переменная | Значение по умолчанию | Описание |
+|------------|----------------------|----------|
+| `DB_USER` | `library_user` | Пользователь PostgreSQL |
+| `DB_PASSWORD` | `library_pass` | Пароль PostgreSQL |
+| `DB_NAME` | `library_db` | Имя базы данных |
+
+Можно переопределить через `.env` файл или переменные окружения:
+
+```bash
+DB_USER=myuser DB_PASSWORD=mypass DB_NAME=mydb docker-compose up --build
+```
+
+#### Остановка
+
+```bash
+docker-compose down
+```
+
+С удалением данных БД:
+```bash
+docker-compose down -v
+```
 
 ---
 
 ### Задание 1 — REST API для управления книгами
 
-Приложение предоставляет CRUD-операции для управления книгами в библиотеке с валидацией данных через Pydantic.
-
-#### Установка зависимостей
-
-```bash
-pip install -r requirements.txt
-```
-
-#### Запуск приложения
-
-```bash
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-```
-
-Или напрямую через Python:
-
-```bash
-python app/main.py
-```
-
-Приложение будет доступно по адресу: http://127.0.0.1:8000
-
-Интерактивная документация (Swagger UI): http://127.0.0.1:8000/docs
+Приложение предоставляет CRUD-операции для управления книгами в библиотеке с валидацией данных через Pydantic и хранением в PostgreSQL.
 
 #### Доступные эндпоинты
 
@@ -151,36 +185,38 @@ curl -X POST "http://localhost:8000/books" \
 
 ## Тесты
 
-Проект покрыт интеграционными тестами через `TestClient` FastAPI.
+Проект покрыт интеграционными и unit-тестами.
 
 | Файл | Количество тестов | Описание |
 |------|-------------------|----------|
-| `tests/test_api.py` | 24 | CRUD-операции, валидация, граничные случаи |
-| `tests/test_penalty.py` | 22 | Расчёт штрафов, граничные случаи, валидация типов и дней|
+| `tests/test_api.py` | 24 | CRUD-операции API, валидация, граничные случаи |
+| `tests/test_penalty.py` | 22 | Расчёт штрафов, граничные случаи, валидация типов и дней |
 
 #### Запуск тестов
 
+Тесты запускаются внутри Docker-контейнера приложения.
+
 Все тесты:
 ```bash
-pytest -v
+docker-compose exec app pytest tests/ -v
 ```
 
 Только API:
 ```bash
-pytest tests/test_api.py -v
+docker-compose exec app pytest tests/test_api.py -v
 ```
 
 Только штрафы:
 ```bash
-pytest tests/test_penalty.py -v
+docker-compose exec app pytest tests/test_penalty.py -v
 ```
 
 С отчётом о покрытии:
 ```bash
-pytest --cov=app --cov-report=term-missing
+docker-compose exec app pytest tests/ -v --cov=app --cov-report=term-missing
 ```
 
-#### Проверяемые сценарии
+#### Проверяемые сценарии (API)
 
 - Корневой эндпоинт возвращает метаданные API
 - Получение пустого списка книг
@@ -214,4 +250,3 @@ pytest --cov=app --cov-report=term-missing
 | Неясное имя `calc` | Переименовано в `calculate_penalty` + обёртка `calculate_penalty_from_raw` | Читаемость и обратная совместимость |
 
 ---
-
