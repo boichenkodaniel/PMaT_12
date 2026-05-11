@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import html
 import re
 from datetime import datetime
 from typing import Optional, overload
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+def sanitize_html(value: str) -> str:
+    """Экранирует HTML-символы для предотвращения XSS."""
+    return html.escape(value)
 
 
 @overload
@@ -37,7 +43,19 @@ def _validate_published_year_value(value: Optional[int]) -> Optional[int]:
 
 class AuthorBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
-    bio: Optional[str] = Field(default=None)
+    bio: Optional[str] = Field(default=None, max_length=1000)
+    
+    @field_validator("name")
+    @classmethod
+    def sanitize_name(cls, value: str) -> str:
+        return sanitize_html(value.strip())
+    
+    @field_validator("bio")
+    @classmethod
+    def sanitize_bio(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        return sanitize_html(value.strip())
 
 
 class AuthorCreate(AuthorBase):
@@ -47,6 +65,20 @@ class AuthorCreate(AuthorBase):
 class AuthorUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=200)
     bio: Optional[str] = None
+    
+    @field_validator("name")
+    @classmethod
+    def sanitize_name(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        return sanitize_html(value.strip())
+    
+    @field_validator("bio")
+    @classmethod
+    def sanitize_bio(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        return sanitize_html(value.strip())
 
 
 class Author(AuthorBase):
@@ -61,6 +93,11 @@ class BookBase(BaseModel):
     isbn: str = Field(..., min_length=1, max_length=20)
     published_year: int = Field(..., ge=1450, le=9999)
     is_available: bool = Field(default=True)
+
+    @field_validator("title")
+    @classmethod
+    def sanitize_title(cls, value: str) -> str:
+        return sanitize_html(value.strip())
 
     @field_validator("isbn")
     @classmethod
@@ -83,6 +120,13 @@ class BookUpdate(BaseModel):
     published_year: Optional[int] = Field(default=None, ge=1450, le=9999)
     is_available: Optional[bool] = None
     author_id: Optional[int] = Field(default=None, ge=1)
+
+    @field_validator("title")
+    @classmethod
+    def sanitize_title(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        return sanitize_html(value.strip())
 
     @field_validator("isbn")
     @classmethod

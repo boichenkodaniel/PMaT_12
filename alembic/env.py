@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from app.database import Base, DATABASE_URL
+from app.database import Base
 
 config = context.config
 
@@ -18,8 +18,14 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+def get_database_url() -> str:
+    url = os.getenv("DATABASE_URL")
+    if url is None:
+        raise RuntimeError("DATABASE_URL environment variable is required for migrations")
+    return url
+
 def run_migrations_offline() -> None:
-    url = DATABASE_URL
+    url = get_database_url()
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -32,7 +38,7 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     configuration = config.get_section(config.config_ini_section)
-    configuration["sqlalchemy.url"] = DATABASE_URL
+    configuration["sqlalchemy.url"] = get_database_url()
     connectable = engine_from_config(
         configuration,
         prefix="sqlalchemy.",
