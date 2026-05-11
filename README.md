@@ -39,12 +39,13 @@
 ```
 app/
 ├── __init__.py      # Инициализация пакета
-├── database.py      # Подключение к БД (SQLAlchemy)
-├── main.py          # Точка входа FastAPI-приложения
+├── database.py      # Подключение к БД (SQLAlchemy), pool_pre_ping
+├── exceptions.py    # Кастомные исключения (NotFoundError, ConflictError)
+├── main.py          # Точка входа FastAPI-приложения (CORS, CSP, rate limiting)
 ├── models.py        # ORM-модели (Authors, Books с relationship)
 ├── penalty.py       # Логика штрафов
-├── schemas.py       # Pydantic-модели (валидация данных)
-└── storage.py       # Слой доступа к данным (CRUD)
+├── schemas.py       # Pydantic-модели (валидация + XSS-санитизация)
+└── storage.py       # Слой доступа к данным (CRUD, @contextmanager)
 
 alembic/
 ├── versions/        # Миграции БД
@@ -90,16 +91,16 @@ docker-compose up --build
 
 #### Переменные окружения
 
-| Переменная | Значение по умолчанию | Описание |
-|------------|----------------------|----------|
-| `DB_USER` | `library_user` | Пользователь PostgreSQL |
-| `DB_PASSWORD` | `library_pass` | Пароль PostgreSQL |
-| `DB_NAME` | `library_db` | Имя базы данных |
+| Переменная | Обязательная | Значение по умолчанию | Описание |
+|------------|-------------|----------------------|----------|
+| `DATABASE_URL` | ✅ | — | URL подключения к PostgreSQL. Пример: `postgresql+psycopg://user:password@host:5432/dbname` |
+| `ALLOWED_ORIGINS` | ❌ | `http://localhost:3000,http://127.0.0.1:3000` | Список разрешённых CORS-источников через запятую |
+| `TESTING` | ❌ | `false` | Режим тестирования (`true` отключает rate limiting и seed) |
 
 Можно переопределить через `.env` файл или переменные окружения:
 
 ```bash
-DB_USER=myuser DB_PASSWORD=mypass DB_NAME=mydb docker-compose up --build
+DATABASE_URL=postgresql+psycopg://user:pass@db:5432/dbname docker-compose up --build
 ```
 
 #### Остановка
@@ -357,8 +358,25 @@ curl -X POST "http://localhost:8000/books" \
 ```
 Ответ: `422 Unprocessable Entity` с описанием ошибок.
 
+#### Безопасность
+
+Реализованы меры защиты на уровне приложения:
+
+| Мера | Реализация |
+|------|-----------|
+| **XSS-санитизация** | `html.escape()` в валидаторах `name`, `bio`, `title` — экранирование HTML-тегов |
+| **CORS** | Whitelist из `ALLOWED_ORIGINS`; разрешены только `GET`, `POST`, `PUT`, `DELETE` |
+| **Rate limiting** | `slowapi`: 5/мин для `POST /authors`, 10/мин для `POST /books`, 30/мин для чтения; отключается в `TESTING=true` |
+| **Security-заголовки** | `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Strict-Transport-Security`, `Referrer-Policy`; `CSP` отключена для `/docs` и `/redoc` |
+| **Нет хардкода паролей** | `DATABASE_URL` обязательна из переменных окружения |
+| **Логирование** | Security-события (создание/удаление, ошибки) записываются через `logging.getLogger("security")` без PII |
+| **Обработка исключений** | Глобальные `exception_handler` для `NotFoundError` (404), `ConflictError` (409), `Exception` (500) |
+| **Управление сессиями БД** | `@contextmanager _db_session()` — гарантированный `rollback` и `close` |
+
+Подробный аудит безопасности приведён в файле `Task7_Report.md`.
 
 ---
+
 
 ## Тесты
 
@@ -366,8 +384,9 @@ curl -X POST "http://localhost:8000/books" \
 
 | Файл | Количество тестов | Описание |
 |------|-------------------|----------|
-| `tests/test_api.py` | 37 | CRUD-операции API (авторы + книги), валидация, граничные случаи |
+| `tests/test_api.py` | 40 | CRUD-операции API (авторы + книги), валидация, конфликты, граничные случаи |
 | `tests/test_penalty.py` | 22 | Расчёт штрафов, граничные случаи, валидация типов и дней |
+| **Итого** | **62** | Покрытие кода: ~97% |
 
 #### Запуск тестов
 
@@ -375,22 +394,22 @@ curl -X POST "http://localhost:8000/books" \
 
 Все тесты:
 ```bash
-docker-compose exec app pytest tests/ -v
+docker-compose exec -e TESTING=true app pytest tests/ -v
 ```
 
 Только API:
 ```bash
-docker-compose exec app pytest tests/test_api.py -v
+docker-compose exec -e TESTING=true app pytest tests/test_api.py -v
 ```
 
 Только штрафы:
 ```bash
-docker-compose exec app pytest tests/test_penalty.py -v
+docker-compose exec -e TESTING=true app pytest tests/test_penalty.py -v
 ```
 
 С отчётом о покрытии:
 ```bash
-docker-compose exec app pytest tests/ -v --cov=app --cov-report=term-missing
+docker-compose exec -e TESTING=true app pytest tests/ -v --cov=app --cov-report=term-missing
 ```
 
 #### Проверяемые сценарии (API)
