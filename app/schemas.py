@@ -35,9 +35,29 @@ def _validate_published_year_value(value: Optional[int]) -> Optional[int]:
     return value
 
 
+class AuthorBase(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    bio: Optional[str] = Field(default=None)
+
+
+class AuthorCreate(AuthorBase):
+    pass
+
+
+class AuthorUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    bio: Optional[str] = None
+
+
+class Author(AuthorBase):
+    id: int = Field(...)
+    created_at: datetime = Field(...)
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class BookBase(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
-    author: str = Field(..., min_length=1, max_length=200)
     isbn: str = Field(..., min_length=1, max_length=20)
     published_year: int = Field(..., ge=1450, le=9999)
     is_available: bool = Field(default=True)
@@ -54,15 +74,15 @@ class BookBase(BaseModel):
 
 
 class BookCreate(BookBase):
-    pass
+    author_id: int = Field(..., ge=1)
 
 
 class BookUpdate(BaseModel):
     title: Optional[str] = Field(default=None, min_length=1, max_length=200)
-    author: Optional[str] = Field(default=None, min_length=1, max_length=200)
     isbn: Optional[str] = Field(default=None, min_length=1, max_length=20)
     published_year: Optional[int] = Field(default=None, ge=1450, le=9999)
     is_available: Optional[bool] = None
+    author_id: Optional[int] = Field(default=None, ge=1)
 
     @field_validator("isbn")
     @classmethod
@@ -77,5 +97,6 @@ class BookUpdate(BaseModel):
 
 class Book(BookBase):
     id: int = Field(...)
+    author_id: int = Field(...)
 
     model_config = ConfigDict(from_attributes=True)

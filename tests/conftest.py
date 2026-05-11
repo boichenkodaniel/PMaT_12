@@ -24,6 +24,6 @@ def client(db_engine):
     with TestClient(app) as c:
         yield c
     db = SessionLocal()
-    db.execute(text("TRUNCATE TABLE books RESTART IDENTITY CASCADE"))
+    db.execute(text("TRUNCATE TABLE books, authors RESTART IDENTITY CASCADE"))
     db.commit()
     db.close()
