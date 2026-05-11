@@ -15,6 +15,8 @@
 | 2 | Генерация тестов |
 | 3 | Рефакторинг «плохого» кода |
 | 4 | Генерация Docker-конфигурации |
+| 5 | Объяснение сложного кода |
+| 6 | Генерация документации |
 
 ---
 
@@ -127,9 +129,22 @@ docker-compose down -v
 | PUT | `/books/{book_id}` | Обновить книгу (полностью или частично) |
 | DELETE | `/books/{book_id}` | Удалить книгу |
 
-#### Примеры запросов
+#### Модели данных
+
+| Поле | Тип | Ограничения | Обязательное |
+|------|-----|-------------|--------------|
+| `id` | integer | Автоинкремент | ✅ (только в ответе) |
+| `title` | string | 1–200 символов | ✅ |
+| `author` | string | 1–200 символов | ✅ |
+| `isbn` | string | 1–20 символов, только цифры и дефисы, итого 10 или 13 цифр | ✅ |
+| `published_year` | integer | 1450 – текущий год | ✅ |
+| `is_available` | boolean | По умолчанию `true` | ✅ |
+
+#### Примеры запросов и ответов
 
 **Создание книги:**
+
+Запрос:
 ```bash
 curl -X POST "http://localhost:8000/books" \
   -H "Content-Type: application/json" \
@@ -142,26 +157,108 @@ curl -X POST "http://localhost:8000/books" \
   }'
 ```
 
+Ответ (`201 Created`):
+```json
+{
+  "id": 1,
+  "title": "Война и мир",
+  "author": "Лев Толстой",
+  "isbn": "978-5-699-12014-7",
+  "published_year": 1869,
+  "is_available": true
+}
+```
+
 **Получение всех книг:**
+
+Запрос:
 ```bash
 curl "http://localhost:8000/books"
 ```
 
+Ответ (`200 OK`):
+```json
+[
+  {
+    "id": 1,
+    "title": "Война и мир",
+    "author": "Лев Толстой",
+    "isbn": "978-5-699-12014-7",
+    "published_year": 1869,
+    "is_available": true
+  },
+  {
+    "id": 2,
+    "title": "1984",
+    "author": "Джордж Оруэлл",
+    "isbn": "978-0-452-28423-4",
+    "published_year": 1949,
+    "is_available": false
+  }
+]
+```
+
 **Получение книги по ID:**
+
+Запрос:
 ```bash
 curl "http://localhost:8000/books/1"
 ```
 
+Ответ (`200 OK`):
+```json
+{
+  "id": 1,
+  "title": "Война и мир",
+  "author": "Лев Толстой",
+  "isbn": "978-5-699-12014-7",
+  "published_year": 1869,
+  "is_available": true
+}
+```
+
+Книга не найдена (`404 Not Found`):
+```json
+{
+  "detail": "Книга с id=999 не найдена"
+}
+```
+
 **Частичное обновление книги:**
+
+Запрос:
 ```bash
 curl -X PUT "http://localhost:8000/books/1" \
   -H "Content-Type: application/json" \
   -d '{"title": "Война и мир (новое издание)"}'
 ```
 
+Ответ (`200 OK`):
+```json
+{
+  "id": 1,
+  "title": "Война и мир (новое издание)",
+  "author": "Лев Толстой",
+  "isbn": "978-5-699-12014-7",
+  "published_year": 1869,
+  "is_available": true
+}
+```
+
 **Удаление книги:**
+
+Запрос:
 ```bash
 curl -X DELETE "http://localhost:8000/books/1"
+```
+
+Ответ: `204 No Content` (тело пустое).
+
+Книга не найдена (`404 Not Found`):
+```json
+{
+  "detail": "Книга с id=999 не найдена"
+}
 ```
 
 #### Валидация данных
